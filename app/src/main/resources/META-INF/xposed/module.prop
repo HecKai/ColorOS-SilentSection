@@ -1,0 +1,11 @@
+# LibXposed 模块元数据（API 100+）
+# 入口类见同目录 java_init.list，作用域见 scope.list
+minApiVersion=100
+targetApiVersion=102
+
+# 作用域固定在本列表内（com.android.systemui），用户不应把模块应用到其它应用
+staticScope=true
+
+# 钩子抛异常时由框架保护性处理（默认值，写出来更明确）
+exceptionMode=protective
+

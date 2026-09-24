@@ -23,8 +23,8 @@ android {
         applicationId 'com.example.oplusnotifsections'
         minSdk 29            // Android 10+；LSPosed 与 ColorOS 16 均满足
         targetSdk 33
-        versionCode 31
-        versionName '3.1'
+        versionCode 32
+        versionName '3.2'
 
         // 只保留中/英文资源，去掉 Material 自带的其他语言（省下约 0.5 MB）
         resourceConfigurations += ['zh-rCN', 'en']
@@ -77,4 +77,10 @@ dependencies {
     // Xposed API 是编译期依赖，运行期由 LSPosed 提供
     compileOnly project(':xposedstub')
     // 也可换成官方仓库：compileOnly 'de.robv.android.xposed:api:82'
+
+    // LibXposed API 102（io.github.libxposed:api:102.0.0）
+    // 官方 AAR 的 Gradle 元数据要求 compileSdk 37（本项目用 34 / AGP 8.5），因此这里改用该构件的
+    // classes.jar 作为本地 compileOnly 依赖；运行期同样由支持 LibXposed 的框架提供这些类。
+    // 构件主页：https://github.com/libxposed/api（Apache-2.0）
+    compileOnly files('libs/libxposed-api-102.0.0.jar')
 }

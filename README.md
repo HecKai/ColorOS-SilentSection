@@ -17,12 +17,13 @@
 ## 前置条件
 
 * 已 root 的设备（Magisk / KernelSU 等）
-* 已安装 **LSPosed**（本项目用 LSPosed 的经典 Xposed API）
+* 已安装 **LSPosed**（经典 Xposed API）或其它支持 **LibXposed API 102** 的框架
 * 模块作用域勾选 **系统界面 / com.android.systemui**
 
 ## 兼容性
 
 * 原理上适用于「ColorOS 16」的机型。
+* 已适配 **LibXposed API 102**（经典 Xposed API 与 LibXposed 框架下都能正常加载）。
 
 
 
@@ -55,9 +56,10 @@ AOD、导航栏、锁屏、钱包都会用到，不能全局改），从而恢�
 
 ### 三、剪贴板弹窗
 
-`ClipboardListener#onPrimaryClipChanged()` 开头即国内判断（见上文隐私提示）。
+`ClipboardListener#onPrimaryClipChanged()` 开头即判断是否为国内版本，国内直接 `return`。
 弹窗、动作按钮、编辑页（`OplusEditTextActivity`）都随 ColorOS 的 SystemUI 一起发布，
-所以放开那一行判断即可，无需自绘任何界面。
+所以放开那一行判断即可，无需自绘任何界面。这行判断同时也是 ColorOS「剪贴板超级防火墙」的拦截点，
+放开后弹窗行为与 OxygenOS 一致（模块只改这一处分支，不读取、不记录、不上传剪贴板内容）。
 
 ---
 
