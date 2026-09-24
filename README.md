@@ -59,12 +59,6 @@ AOD、导航栏、锁屏、钱包都会用到，不能全局改），从而恢�
 弹窗、动作按钮、编辑页（`OplusEditTextActivity`）都随 ColorOS 的 SystemUI 一起发布，
 所以放开那一行判断即可，无需自绘任何界面。
 
-### 四、开关同步
-
-App 侧改动写入自己的 SharedPreferences，并广播 `com.example.oplusnotifsections.SETTINGS`
-（`setPackage("com.android.systemui")`）；SystemUI 侧在 `Application#onCreate` 拿到 Context 后注册动态接收器，
-把结果缓存到 SystemUI 自己的 SharedPreferences —— 因此**重启手机后无需先打开 App**。
-
 ---
 
 ## 许可
