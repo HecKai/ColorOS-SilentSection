@@ -58,8 +58,6 @@ public final class HookCore {
             "com.android.systemui.statusbar.notification.collection.render.NodeSpecBuilder";
     private static final String CLS_NODE_SPEC_IMPL =
             "com.android.systemui.statusbar.notification.collection.render.NodeSpecImpl";
-    private static final String CLS_NODE_SPEC_IFACE =
-            "com.android.systemui.statusbar.notification.collection.render.NodeSpec";
     private static final String CLS_NODE_CONTROLLER =
             "com.android.systemui.statusbar.notification.collection.render.NodeController";
 
@@ -71,15 +69,15 @@ public final class HookCore {
     private static volatile boolean clipboardEnabled = true;
     private static volatile Object silentHeaderController = null;
     private static volatile Class<?> nodeSpecImplClass = null;
+
     /**
-     * 构造 NodeSpecImpl 需要 NodeSpec / NodeController 两个参数类型。
+     * NodeSpecImpl 的 {@code (NodeSpec, NodeController)} 构造器，安装时用宿主类加载器解析一次。
      *
-     * <p>必须用安装时通过宿主类加载器拿到的 Class 对象，不能用 {@code Class.forName(String)}：
-     * 那是用模块自己的加载器去找宿主类，只有经典 Xposed（模块 dex 合入宿主加载器）才成立，
-     * LibXposed API 100+ 给模块独立的类加载器，找不到 SystemUI 的类。</p>
+     * <p>不能在这里用 {@code Class.forName(String)}：那是拿模块自己的加载器去找宿主类，
+     * 只有经典 Xposed（模块 dex 合入宿主加载器）才成立，LibXposed API 100+ 给模块独立的
+     * 类加载器，找不到 SystemUI 的类。</p>
      */
-    private static volatile Class<?> nodeSpecIfaceClass = null;
-    private static volatile Class<?> nodeControllerClass = null;
+    private static volatile Constructor<?> nodeSpecCtor = null;
 
     private static final AtomicBoolean INSTALLED = new AtomicBoolean(false);
     private static final AtomicBoolean SETTINGS_READY = new AtomicBoolean(false);
@@ -108,15 +106,28 @@ public final class HookCore {
         api = hookApi;
         try {
             nodeSpecImplClass = classLoader.loadClass(CLS_NODE_SPEC_IMPL);
-            hookIsExpRegion(classLoader);
-            hookModifyOrderedSection(classLoader);
-            hookClipboardListener(classLoader);
-            hookNodeSpecBuilder(classLoader);
-            hookApplicationCreate();
+            // 每个挂钩点单独兜底：某一处签名对不上时不至于把另一项功能一起拖死
+            step("isExpRegion", () -> hookIsExpRegion(classLoader));
+            step("modifyOrderedSection", () -> hookModifyOrderedSection(classLoader));
+            step("clipboardListener", () -> hookClipboardListener(classLoader));
+            step("nodeSpecBuilder", () -> hookNodeSpecBuilder(classLoader));
+            step("applicationCreate", HookCore::hookApplicationCreate);
             api.log(TAG + ": ready via " + hookApi.name()
                     + " (notif=" + notifEnabled + ", clipboard=" + clipboardEnabled + ")");
         } catch (Throwable t) {
             logFailure("hook install", t);
+        }
+    }
+
+    private interface Step {
+        void run() throws Throwable;
+    }
+
+    private static void step(String what, Step action) {
+        try {
+            action.run();
+        } catch (Throwable t) {
+            logFailure(what, t);
         }
     }
 
@@ -204,12 +215,31 @@ public final class HookCore {
 
     private static void hookNodeSpecBuilder(ClassLoader cl) throws Throwable {
         Class<?> builder = cl.loadClass(CLS_NODE_SPEC_BUILDER);
-        Class<?> specIface = cl.loadClass(CLS_NODE_SPEC_IFACE);
-        Class<?> controller = cl.loadClass(CLS_NODE_CONTROLLER);
-        nodeSpecIfaceClass = specIface;
-        nodeControllerClass = controller;
-        api.hookMethod(builder, "buildNodeSpec", new Class<?>[]{
-                        specIface, List.class, List.class},
+        Class<?> nodeController = cl.loadClass(CLS_NODE_CONTROLLER);
+        Method target = null;
+        for (Method m : builder.getDeclaredMethods()) {
+            if (!"buildNodeSpec".equals(m.getName())) {
+                continue;
+            }
+            Class<?>[] params = m.getParameterTypes();
+            if (params.length == 3 && params[0] == nodeController) {
+                target = m;   // 16.99.12：buildNodeSpec(NodeController, List, List)
+                break;
+            }
+            if (target == null) {
+                target = m;   // 兜底：万一以后参数类型变了，也先挂上
+            }
+        }
+        if (target == null) {
+            throw new NoSuchMethodException(builder.getName() + "#buildNodeSpec");
+        }
+        // 表头 node 用 NodeSpecImpl(NodeSpec, NodeController) 构造：返回值和首个参数就是这两个类型
+        Constructor<?> ctor = nodeSpecImplClass.getDeclaredConstructor(
+                target.getReturnType(), target.getParameterTypes()[0]);
+        ctor.setAccessible(true);
+        nodeSpecCtor = ctor;
+        target.setAccessible(true);
+        api.hookMethod(builder, "buildNodeSpec", target.getParameterTypes(),
                 new HookApi.Around() {
                     @Override
                     public void before(Object thisObject, Object[] args) {
@@ -255,11 +285,8 @@ public final class HookCore {
     /** 把静音表头 node 插到渲染树里第一条"可见"静音通知之前。 */
     private static void injectSilentHeaderNode(Object rootSpec) throws Exception {
         Object headerController = silentHeaderController;
-        Class<?> specClass = nodeSpecImplClass;
-        Class<?> specIface = nodeSpecIfaceClass;
-        Class<?> controllerClass = nodeControllerClass;
-        if (rootSpec == null || headerController == null || specClass == null
-                || specIface == null || controllerClass == null) {
+        Constructor<?> ctor = nodeSpecCtor;
+        if (rootSpec == null || headerController == null || ctor == null) {
             return;
         }
         List<?> children = (List<?>) call(rootSpec, "getChildren");
@@ -289,8 +316,6 @@ public final class HookCore {
             }
             return;   // 没有静音通知，或这一帧它们全被隐藏
         }
-        Constructor<?> ctor = specClass.getDeclaredConstructor(specIface, controllerClass);
-        ctor.setAccessible(true);
         Object node = ctor.newInstance(rootSpec, headerController);
         @SuppressWarnings("unchecked")
         List<Object> mutable = (List<Object>) children;
