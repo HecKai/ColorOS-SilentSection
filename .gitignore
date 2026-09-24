@@ -1,0 +1,27 @@
+# Gradle / AGP
+.gradle/
+build/
+app/build/
+captures/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# 本机配置与私钥：绝对不要提交
+local.properties
+keystore.properties
+*.jks
+*.keystore
+
+# 构建产物
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# 其它
+.DS_Store
+Thumbs.db
+

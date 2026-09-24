@@ -1,0 +1,80 @@
+plugins {
+    id 'com.android.application'
+}
+
+// ---- 签名：从 keystore.properties / 环境变量读取；仓库里不含私钥 ----
+// 没有配置时自动退回 debug 签名（能构建，只是换签名后需先卸载已安装版本）
+def keystoreProps = new Properties()
+def keystorePropsFile = rootProject.file('keystore.properties')
+if (keystorePropsFile.exists()) {
+    keystorePropsFile.withInputStream { keystoreProps.load(it) }
+}
+def ksStore = keystoreProps.getProperty('storeFile') ?: System.getenv('KEYSTORE_FILE')
+def ksStorePassword = keystoreProps.getProperty('storePassword') ?: System.getenv('KEYSTORE_STORE_PASSWORD')
+def ksAlias = keystoreProps.getProperty('keyAlias') ?: System.getenv('KEYSTORE_ALIAS')
+def ksKeyPassword = keystoreProps.getProperty('keyPassword') ?: System.getenv('KEYSTORE_KEY_PASSWORD')
+def hasOwnKey = ksStore != null && rootProject.file(ksStore).exists()
+
+android {
+    namespace 'com.example.oplusnotifsections'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.example.oplusnotifsections'
+        minSdk 29            // Android 10+；LSPosed 与 ColorOS 16 均满足
+        targetSdk 33
+        versionCode 31
+        versionName '3.1'
+
+        // 只保留中/英文资源，去掉 Material 自带的其他语言（省下约 0.5 MB）
+        resourceConfigurations += ['zh-rCN', 'en']
+    }
+
+    signingConfigs {
+        if (hasOwnKey) {
+            release {
+                storeFile rootProject.file(ksStore)
+                storePassword ksStorePassword
+                keyAlias ksAlias
+                keyPassword ksKeyPassword
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true          // R8：裁掉未使用的类/方法
+            shrinkResources true        // 连带裁掉未使用的资源
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'),
+                    'proguard-rules.pro'
+            signingConfig hasOwnKey ? signingConfigs.release : signingConfigs.debug
+        }
+        debug {
+            minifyEnabled false         // 调试构建不压缩，方便断点
+            signingConfig hasOwnKey ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+
+    dependenciesInfo {
+        includeInApk false
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    packaging {
+        resources.excludes += ['META-INF/*.kotlin_module']
+    }
+}
+
+dependencies {
+    // 界面：原生 Material 3 组件
+    implementation 'com.google.android.material:material:1.12.0'
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+
+    // Xposed API 是编译期依赖，运行期由 LSPosed 提供
+    compileOnly project(':xposedstub')
+    // 也可换成官方仓库：compileOnly 'de.robv.android.xposed:api:82'
+}

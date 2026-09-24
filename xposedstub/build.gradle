@@ -1,0 +1,16 @@
+// 仅编译期使用的 Xposed API 桩：让工程不依赖 api.xposed.info（那个仓库经常打不开）
+plugins {
+    id 'java-library'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_1_8
+    targetCompatibility = JavaVersion.VERSION_1_8
+}
+
+sourceSets {
+    main {
+        // 桩源码放在工程根的 xposed-api-stub/src 下，模块只引用它
+        java.srcDirs = ['../xposed-api-stub/src']
+    }
+}

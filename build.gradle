@@ -1,0 +1,5 @@
+// AGP 8.5.2 需要 Android Studio Koala (2024.1) 及以上 + JDK 17
+// 如果你的 Studio 较老，把版本降到 8.1.4 并同步调整 gradle-wrapper.properties
+plugins {
+    id 'com.android.application' version '8.5.2' apply false
+}
