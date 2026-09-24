@@ -2,6 +2,7 @@
 .gradle/
 build/
 app/build/
+app/release/
 captures/
 
 # IDE
