@@ -109,7 +109,19 @@ public class LibXposedEntry extends XposedModule {
                     List<Object> argList = chain.getArgs();
                     Object[] args = argList == null ? new Object[0] : argList.toArray();
                     around.before(thisObject, args);
-                    Object result = chain.proceed();
+                    Object result;
+                    try {
+                        result = chain.proceed();
+                    } catch (Throwable t) {
+                        // 与经典 Xposed 的行为保持一致：被挂钩方法抛异常时 after 也要执行一次
+                        // （HookCore 靠它复位 ThreadLocal，否则该线程会一直认为自己在分区/剪贴板流程里）
+                        try {
+                            around.after(thisObject, args, null);
+                        } catch (Throwable ignored) {
+                            // after 自身的异常不能盖掉原始异常
+                        }
+                        throw t;
+                    }
                     return around.after(thisObject, args, result);
                 }
             };

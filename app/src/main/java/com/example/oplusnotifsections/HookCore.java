@@ -58,6 +58,8 @@ public final class HookCore {
             "com.android.systemui.statusbar.notification.collection.render.NodeSpecBuilder";
     private static final String CLS_NODE_SPEC_IMPL =
             "com.android.systemui.statusbar.notification.collection.render.NodeSpecImpl";
+    private static final String CLS_NODE_SPEC_IFACE =
+            "com.android.systemui.statusbar.notification.collection.render.NodeSpec";
     private static final String CLS_NODE_CONTROLLER =
             "com.android.systemui.statusbar.notification.collection.render.NodeController";
 
@@ -69,6 +71,15 @@ public final class HookCore {
     private static volatile boolean clipboardEnabled = true;
     private static volatile Object silentHeaderController = null;
     private static volatile Class<?> nodeSpecImplClass = null;
+    /**
+     * 构造 NodeSpecImpl 需要 NodeSpec / NodeController 两个参数类型。
+     *
+     * <p>必须用安装时通过宿主类加载器拿到的 Class 对象，不能用 {@code Class.forName(String)}：
+     * 那是用模块自己的加载器去找宿主类，只有经典 Xposed（模块 dex 合入宿主加载器）才成立，
+     * LibXposed API 100+ 给模块独立的类加载器，找不到 SystemUI 的类。</p>
+     */
+    private static volatile Class<?> nodeSpecIfaceClass = null;
+    private static volatile Class<?> nodeControllerClass = null;
 
     private static final AtomicBoolean INSTALLED = new AtomicBoolean(false);
     private static final AtomicBoolean SETTINGS_READY = new AtomicBoolean(false);
@@ -193,8 +204,12 @@ public final class HookCore {
 
     private static void hookNodeSpecBuilder(ClassLoader cl) throws Throwable {
         Class<?> builder = cl.loadClass(CLS_NODE_SPEC_BUILDER);
+        Class<?> specIface = cl.loadClass(CLS_NODE_SPEC_IFACE);
+        Class<?> controller = cl.loadClass(CLS_NODE_CONTROLLER);
+        nodeSpecIfaceClass = specIface;
+        nodeControllerClass = controller;
         api.hookMethod(builder, "buildNodeSpec", new Class<?>[]{
-                        cl.loadClass(CLS_NODE_CONTROLLER), List.class, List.class},
+                        specIface, List.class, List.class},
                 new HookApi.Around() {
                     @Override
                     public void before(Object thisObject, Object[] args) {
@@ -241,7 +256,10 @@ public final class HookCore {
     private static void injectSilentHeaderNode(Object rootSpec) throws Exception {
         Object headerController = silentHeaderController;
         Class<?> specClass = nodeSpecImplClass;
-        if (rootSpec == null || headerController == null || specClass == null) {
+        Class<?> specIface = nodeSpecIfaceClass;
+        Class<?> controllerClass = nodeControllerClass;
+        if (rootSpec == null || headerController == null || specClass == null
+                || specIface == null || controllerClass == null) {
             return;
         }
         List<?> children = (List<?>) call(rootSpec, "getChildren");
@@ -271,9 +289,7 @@ public final class HookCore {
             }
             return;   // 没有静音通知，或这一帧它们全被隐藏
         }
-        Constructor<?> ctor = specClass.getDeclaredConstructor(
-                Class.forName("com.android.systemui.statusbar.notification.collection.render.NodeSpec"),
-                Class.forName(CLS_NODE_CONTROLLER));
+        Constructor<?> ctor = specClass.getDeclaredConstructor(specIface, controllerClass);
         ctor.setAccessible(true);
         Object node = ctor.newInstance(rootSpec, headerController);
         @SuppressWarnings("unchecked")

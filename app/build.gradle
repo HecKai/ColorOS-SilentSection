@@ -23,8 +23,8 @@ android {
         applicationId 'com.example.oplusnotifsections'
         minSdk 29            // Android 10+；LSPosed 与 ColorOS 16 均满足
         targetSdk 33
-        versionCode 32
-        versionName '3.2'
+        versionCode 33
+        versionName '3.2.1'
 
         // 只保留中/英文资源，去掉 Material 自带的其他语言（省下约 0.5 MB）
         resourceConfigurations += ['zh-rCN', 'en']
