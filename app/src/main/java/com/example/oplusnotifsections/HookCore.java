@@ -60,6 +60,8 @@ public final class HookCore {
             "com.android.systemui.statusbar.notification.collection.render.NodeSpecImpl";
     private static final String CLS_NODE_CONTROLLER =
             "com.android.systemui.statusbar.notification.collection.render.NodeController";
+    private static final String CLS_ROW =
+            "com.android.systemui.statusbar.notification.row.ExpandableNotificationRow";
 
     /** 只在指定方法执行期间覆盖 isExpRegion()，其余 100+ 处调用点不受影响 */
     private static final ThreadLocal<Boolean> IN_MODIFY_ORDERED_SECTION = flag();
@@ -79,11 +81,22 @@ public final class HookCore {
      */
     private static volatile Constructor<?> nodeSpecCtor = null;
 
+    /**
+     * 行视图的类，以及"从行上取 NotificationEntry"的方法名。
+     *
+     * <p>ColorOS 16 是 {@code getEntryLegacy()}，ColorOS 17（17.99.02）把它删掉了，只剩
+     * {@code getEntry()}。旧实现把 getEntryLegacy 写死并吞掉异常，于是 17 上永远判定不出静音行，
+     * 表头静默消失且不报错。</p>
+     */
+    private static volatile Class<?> rowClass = null;
+    private static volatile String rowEntryMethod = "getEntry";
+
     private static final AtomicBoolean INSTALLED = new AtomicBoolean(false);
     private static final AtomicBoolean SETTINGS_READY = new AtomicBoolean(false);
     private static volatile HookApi api;
     private static int failureLogCount = 0;
     private static int hiddenSkipLogCount = 0;
+    private static int injectLogCount = 0;
 
     private HookCore() {
     }
@@ -106,6 +119,8 @@ public final class HookCore {
         api = hookApi;
         try {
             nodeSpecImplClass = classLoader.loadClass(CLS_NODE_SPEC_IMPL);
+            rowClass = classLoader.loadClass(CLS_ROW);
+            rowEntryMethod = pickRowEntryMethod(rowClass);
             // 每个挂钩点单独兜底：某一处签名对不上时不至于把另一项功能一起拖死
             step("isExpRegion", () -> hookIsExpRegion(classLoader));
             step("modifyOrderedSection", () -> hookModifyOrderedSection(classLoader));
@@ -113,7 +128,8 @@ public final class HookCore {
             step("nodeSpecBuilder", () -> hookNodeSpecBuilder(classLoader));
             step("applicationCreate", HookCore::hookApplicationCreate);
             api.log(TAG + ": ready via " + hookApi.name()
-                    + " (notif=" + notifEnabled + ", clipboard=" + clipboardEnabled + ")");
+                    + " (notif=" + notifEnabled + ", clipboard=" + clipboardEnabled
+                    + ", rowEntry=" + rowEntryMethod + ")");
         } catch (Throwable t) {
             logFailure("hook install", t);
         }
@@ -320,6 +336,11 @@ public final class HookCore {
         @SuppressWarnings("unchecked")
         List<Object> mutable = (List<Object>) children;
         mutable.add(insertAt, node);
+        if (injectLogCount < 3) {
+            injectLogCount++;
+            api.log(TAG + ": silent header inserted at " + insertAt
+                    + " of " + children.size() + " node(s)");
+        }
     }
 
     private static boolean isSpecHidden(Object spec) {
@@ -331,20 +352,32 @@ public final class HookCore {
         }
     }
 
+    /** 行视图上"取 NotificationEntry"的方法：16 用 getEntryLegacy，17 只有 getEntry。 */
+    private static String pickRowEntryMethod(Class<?> row) {
+        try {
+            row.getDeclaredMethod("getEntryLegacy");
+            return "getEntryLegacy";
+        } catch (NoSuchMethodException ignored) {
+            return "getEntry";
+        }
+    }
+
     /** 该 controller 对应视图所属通知的 bucket（静音类都是 6）。 */
     private static int bucketOfControllerView(Object controller) {
         try {
             Object view = call(controller, "getView");
-            if (view == null
-                    || !"ExpandableNotificationRow".equals(view.getClass().getSimpleName())) {
+            Class<?> rows = rowClass;
+            if (view == null || rows == null || !rows.isInstance(view)) {
                 return -1;
             }
-            Object entry = call(view, "getEntryLegacy");
+            Object entry = call(view, rowEntryMethod);
             if (entry == null) {
                 return -1;
             }
             return (Integer) call(entry, "getBucket");
         } catch (Throwable t) {
+            // 以前这里把异常吞掉了，导致 ColorOS 17 上"判定不出静音行"完全没有任何日志
+            logFailure("silent-row lookup", t);
             return -1;
         }
     }
