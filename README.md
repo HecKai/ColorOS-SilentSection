@@ -22,7 +22,7 @@
 
 ## 兼容性
 
-* 原理上适用于「ColorOS 16」的机型。
+* 原理上适用于「ColorOS 16/17」的机型。
 * 已适配 **LibXposed API 102**（经典 Xposed API 与 LibXposed 框架下都能正常加载）。
 
 
